@@ -69,7 +69,7 @@ Both check runs completed 10/10 answers with 94 predictions each, on the identic
 | v2 check | 107.6 s | 114,952 / 17,235 |
 | supplementary v1 development repeat | 410.7 s | 440,541 / 64,032 |
 
-Almost every answer used 2 model turns (one lookup turn, one final turn); see the `turns` column in each report.
+Every one of the 140 live answer runs used exactly 2 model turns (one lookup turn, one final turn); see the `turns` column in each report.
 
 ## Tests actually run
 
