@@ -18,6 +18,40 @@ def _fmt(x: Any) -> str:
     return str(x)
 
 
+def evidence_agreement(run: dict[str, Any], gold: dict | None = None) -> dict[str, Any]:
+    """SECONDARY DIAGNOSTIC (not one of the required metrics): agreement of
+    predicted fact_ids with gold evidence_fact_ids on span-matched claims.
+    Computed post hoc from saved rows, identically for every development run."""
+    gold = gold or {g.claim_id: g for g in load_gold()}
+    n = exact = tp = fp = fn = 0
+    by_label: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for a in run["answers"]:
+        for c in a["claims"]:
+            g = gold.get(c["claim_id"])
+            if g is None:
+                continue
+            gs, ps = set(g.evidence_fact_ids), set(c["fact_ids"])
+            n += 1
+            exact += int(gs == ps)
+            tp += len(gs & ps)
+            fp += len(ps - gs)
+            fn += len(gs - ps)
+            by_label[g.expected_label][0] += int(gs == ps)
+            by_label[g.expected_label][1] += 1
+    prec = tp / (tp + fp) if tp + fp else 0.0
+    rec = tp / (tp + fn) if tp + fn else 0.0
+    return {
+        "matched_claims": n,
+        "exact_set_matches": exact,
+        "exact_set_rate": exact / n if n else None,
+        "fact_id_tp": tp, "fact_id_fp": fp, "fact_id_fn": fn,
+        "fact_id_precision": prec,
+        "fact_id_recall": rec,
+        "fact_id_f1": 2 * prec * rec / (prec + rec) if prec + rec else 0.0,
+        "exact_set_rate_by_expected_label": {k: v[0] / v[1] for k, v in sorted(by_label.items())},
+    }
+
+
 def enrich_development(run: dict[str, Any]) -> dict[str, Any]:
     """Harness-side diagnostics joined from gold AFTER predictions were saved."""
     gold = {g.claim_id: g for g in load_gold(answers=load_answers())}
@@ -62,6 +96,7 @@ def enrich_development(run: dict[str, Any]) -> dict[str, Any]:
             by_tag[t][outcome] += 1
             by_tag[t]["total"] += 1
     return {
+        "evidence_agreement": evidence_agreement(run, gold),
         "missed": missed,
         "extra": extra,
         "wrong_label": wrong,
@@ -132,6 +167,15 @@ def render_markdown(rep: dict[str, Any]) -> str:
         L.append(f"Gold claim coverage C/G: {_fmt((rep.get('diagnostics') or {}).get('gold_claim_coverage'))}")
     an = rep.get("analysis")
     if an:
+        ev = an["evidence_agreement"]
+        L.append("")
+        L.append("## Evidence agreement (secondary diagnostic, not a required metric)")
+        L.append("")
+        L.append(f"Predicted fact_ids vs gold evidence_fact_ids on {ev['matched_claims']} span-matched claims: "
+                 f"exact set {ev['exact_set_matches']}/{ev['matched_claims']} ({_fmt(ev['exact_set_rate'])}); "
+                 f"fact-ID precision {_fmt(ev['fact_id_precision'])}, recall {_fmt(ev['fact_id_recall'])}, "
+                 f"F1 {_fmt(ev['fact_id_f1'])} (tp {ev['fact_id_tp']}, fp {ev['fact_id_fp']}, fn {ev['fact_id_fn']}). "
+                 f"Exact-set rate by expected label: `{json.dumps({k: round(v, 3) for k, v in ev['exact_set_rate_by_expected_label'].items()})}`")
         L.append("")
         L.append("## Label confusion (rows = expected)")
         L.append("")
@@ -225,6 +269,13 @@ def compare_runs(runs: list[dict[str, Any]]) -> str:
             return out, extras
         o1, x1 = outcome_map(dev["v1"])
         o2, x2 = outcome_map(dev["v2"])
+        e1, e2 = evidence_agreement(dev["v1"]), evidence_agreement(dev["v2"])
+        L += ["", "## Evidence agreement on development (secondary diagnostic)", "",
+              "| run | matched claims | exact-set rate | fact-ID precision | fact-ID recall | fact-ID F1 | fp | fn |",
+              "|---|---|---|---|---|---|---|---|"]
+        for name, e in (("v1", e1), ("v2", e2)):
+            L.append(f"| {name} | {e['matched_claims']} | {_fmt(e['exact_set_rate'])} | {_fmt(e['fact_id_precision'])} | "
+                     f"{_fmt(e['fact_id_recall'])} | {_fmt(e['fact_id_f1'])} | {e['fact_id_fp']} | {e['fact_id_fn']} |")
         fixed = [k for k in o1 if o1[k][0] != "correct" and o2[k][0] == "correct"]
         broke = [k for k in o1 if o1[k][0] == "correct" and o2[k][0] != "correct"]
         L += ["", "## Development v1 → v2 per-claim changes", "",
