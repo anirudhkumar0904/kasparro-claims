@@ -12,9 +12,10 @@ from fastapi.responses import JSONResponse
 
 from . import config
 from .agent import run_agent
-from .db import Database
+from .db import Database, DatabaseNotConfigured
 from .facts_tool import FactStore
 from .providers import ProviderFactory, live_provider_factory
+from .providers.base import ProviderError
 from .runner import run_evaluation
 from .schemas import AgentInput, ClassifyRequest, EvaluationRunRequest
 
@@ -34,6 +35,17 @@ async def _validation_handler(_request: Request, exc: RequestValidationError) ->
     return JSONResponse(status_code=422, content={"error": {"type": "validation_error",
                                                             "message": "request validation failed",
                                                             "fields": fields}})
+
+
+@app.exception_handler(ProviderError)
+async def _provider_handler(_request: Request, exc: ProviderError) -> JSONResponse:
+    # e.g. provider not configured (missing API key); message is already sanitized
+    return error_body(504 if exc.error_type == "provider_timeout" else 502, exc.error_type, exc.message)
+
+
+@app.exception_handler(DatabaseNotConfigured)
+async def _db_handler(_request: Request, _exc: DatabaseNotConfigured) -> JSONResponse:
+    return error_body(503, "database_not_configured", "DATABASE_URL is not configured")
 
 
 # ---------------------------------------------------------------- dependencies (overridable in tests)
@@ -82,6 +94,7 @@ def create_evaluation_run(req: EvaluationRunRequest, store: FactStore = Depends(
                           settings: config.Settings = Depends(get_settings),
                           provider_factory: ProviderFactory = Depends(get_provider_factory),
                           db: Database = Depends(get_db)) -> Any:
+    provider_factory.preflight()  # fail fast with 502 before a run row is created
     summary = run_evaluation(req.agent_version, req.split, provider_factory, provider_factory.name,
                              provider_factory.model, db, settings, store=store)
     return {"run_id": summary["run_id"], "status": summary["status"], "counts": summary["counts"],

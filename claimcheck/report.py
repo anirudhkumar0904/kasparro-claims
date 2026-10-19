@@ -231,6 +231,33 @@ def render_markdown(rep: dict[str, Any]) -> str:
     return "\n".join(L) + "\n"
 
 
+def compare_check_outputs(runs: list[dict[str, Any]]) -> list[str]:
+    """Gold-free v1 vs v2 comparison of saved check predictions (no quality claims)."""
+    chk: dict[str, dict] = {}
+    for r in runs:
+        if r["split"] == "check" and r["status"] == "completed":
+            chk.setdefault(r["agent_version"], r)
+    if "v1" not in chk or "v2" not in chk:
+        return []
+
+    def m(run):
+        return {c["claim_id"]: c for a in run["answers"] for c in a["claims"]}
+    a, b = m(chk["v1"]), m(chk["v2"])
+    common = sorted(set(a) & set(b), key=lambda k: (k.split(":")[0], int(k.split(":")[1])))
+    label_diff = [k for k in common if a[k]["label"] != b[k]["label"]]
+    fact_diff = [k for k in common if sorted(a[k]["fact_ids"]) != sorted(b[k]["fact_ids"])]
+    L = ["", "## Check split: v1 vs v2 saved outputs (no gold; not a quality score)", "",
+         f"- spans: v1 {len(a)}, v2 {len(b)}, shared {len(common)}, only v1 {len(set(a) - set(b))}, "
+         f"only v2 {len(set(b) - set(a))}",
+         f"- shared spans with a different label: {len(label_diff)}",
+         f"- shared spans with different fact_ids only: {len([k for k in fact_diff if k not in label_diff])}", ""]
+    for k in label_diff:
+        L.append(f"- `{k}` v1 **{a[k]['label']}** / v2 **{b[k]['label']}**: {a[k]['quote']}")
+        L.append(f"  - v1 reason: {a[k]['reason']}")
+        L.append(f"  - v2 reason: {b[k]['reason']}")
+    return L
+
+
 def write_report(run: dict[str, Any], name: str | None = None) -> tuple[Path, Path]:
     rep = build_report(run)
     name = name or f"{rep['agent_version']}_{rep['split']}"
@@ -298,4 +325,5 @@ def compare_runs(runs: list[dict[str, Any]]) -> str:
                 L.append(f"- `{k}` expected {g.expected_label} [{', '.join(g.difficulty_tags)}]: "
                          f"v1 {o1[k][0]} → v2 {o2[k][0]}")
             L.append("")
+    L += compare_check_outputs(runs)
     return "\n".join(L) + "\n"

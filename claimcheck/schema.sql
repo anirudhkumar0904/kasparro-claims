@@ -67,3 +67,17 @@ CREATE TABLE IF NOT EXISTS claim_results (
 
 CREATE INDEX IF NOT EXISTS answer_results_run_idx ON answer_results (run_id, ordinal);
 CREATE INDEX IF NOT EXISTS claim_results_run_idx ON claim_results (run_id, answer_id, start_char);
+
+-- An error answer may never carry claim rows (enforced in the database, not only via n_claims).
+CREATE OR REPLACE FUNCTION claim_requires_ok_answer() RETURNS trigger AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM answer_results
+                    WHERE run_id = NEW.run_id AND answer_id = NEW.answer_id AND status = 'ok') THEN
+        RAISE EXCEPTION 'claim rows require an ok answer result' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS claim_requires_ok_answer ON claim_results;
+CREATE TRIGGER claim_requires_ok_answer BEFORE INSERT OR UPDATE OF run_id, answer_id ON claim_results
+    FOR EACH ROW EXECUTE FUNCTION claim_requires_ok_answer();

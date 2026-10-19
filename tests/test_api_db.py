@@ -194,3 +194,54 @@ def test_infrastructure_failure_marks_run_failed_and_keeps_partial(db, answers, 
     run = db.get_run(uuid.UUID(s["run_id"]))
     assert run["status"] == "failed" and run["failure_reason"] == "RuntimeError"
     assert [a["answer_id"] for a in run["answers"]] == ["A41", "A42"]
+
+
+def test_db_rejects_claims_on_error_answer(db):
+    meta = {"split": "check", "agent_version": "v1", "prompt_version": "p", "prompt_sha256": "x",
+            "dataset_version": "d", "evaluator_version": "e", "fact_version": "f", "provider": "fake",
+            "model": "m", "settings": {}, "file_hashes": {}}
+    run_id = db.create_run(meta)
+    db.save_answer_result(run_id, 0, {"answer_id": "A41", "status": "error", "error_type": "provider_error",
+                                      "latency_ms": 1, "turns": 1}, [])
+    with db.connect() as conn, pytest.raises(psycopg.errors.CheckViolation):
+        conn.execute("INSERT INTO claim_results (run_id, answer_id, claim_id, start_char, end_char, quote, label,"
+                     " fact_ids, reason) VALUES (%s, 'A41', 'A41:0:5', 0, 5, 'abcde', 'unknown', '[]', 'r')",
+                     (run_id,))
+
+
+# ------------------------------------------------------------------ live factory without a key (no network)
+@pytest.fixture
+def no_key_client(db, store, settings, monkeypatch):
+    from claimcheck import config
+    from claimcheck.providers import live_provider_factory
+
+    monkeypatch.setattr(config, "api_key", lambda: None)
+    api.app.dependency_overrides[api.get_db] = lambda: db
+    api.app.dependency_overrides[api.get_store] = lambda: store
+    api.app.dependency_overrides[api.get_settings] = lambda: settings
+    api.app.dependency_overrides[api.get_provider_factory] = lambda: live_provider_factory(settings)
+    yield TestClient(api.app)
+    api.app.dependency_overrides.clear()
+
+
+def test_missing_api_key_maps_to_502_and_brand_check_still_404(no_key_client, answers, db):
+    r = no_key_client.post("/classify", json=body(answers["A01"]))
+    assert r.status_code == 502 and r.json()["error"]["type"] == "provider_not_configured"
+    r = no_key_client.post("/classify", json=body(answers["A01"], brand_id="acmesound"))
+    assert r.status_code == 404
+    r = no_key_client.post("/evaluation-runs", json={"agent_version": "v1", "split": "check"})
+    assert r.status_code == 502
+    with db.connect() as conn:
+        assert conn.execute("SELECT count(*) AS n FROM runs").fetchone()["n"] == 0  # failed fast, no run row
+
+
+def test_missing_database_url_maps_to_503(monkeypatch):
+    from claimcheck import config
+
+    monkeypatch.setattr(config, "database_url", lambda: None)
+    api._database.cache_clear()
+    try:
+        r = TestClient(api.app).get(f"/evaluation-runs/{uuid.uuid4()}")
+        assert r.status_code == 503 and r.json()["error"]["type"] == "database_not_configured"
+    finally:
+        api._database.cache_clear()

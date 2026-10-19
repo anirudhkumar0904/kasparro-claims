@@ -28,6 +28,7 @@ reports/               the four saved live-run reports (.json + .md) and compari
 traces/<run_id>/       sanitized per-answer model/tool exchanges for every live run
 evidence/              console logs of the live runs, pytest output, API call samples
 tests/                 controlled tests (fake provider, real local PostgreSQL)
+scripts/recount_from_db.py   independent recount of stored development scores (bypasses scorer)
 ```
 
 ## Setup
@@ -74,6 +75,7 @@ curl -s localhost:8000/evaluation-runs/<run_id>
 ## Test
 
 ```bash
+python scripts/recount_from_db.py <dev_run_id>   # independent recount of stored scores from DB rows
 python -m pytest -v          # uses TEST_DATABASE_URL (default: local claimcheck_test); DB tests skip if unreachable
 ```
 
@@ -89,9 +91,9 @@ The actual output of the run used for submission is in [`evidence/pytest_output.
 
 **Offsets.** The model returns verbatim sentence quotes, never offsets. Python locates each quote in the exact decoded `ai_answer` (zero-based code points, end exclusive). Repeated identical text is resolved in document order: each quote takes the first free occurrence at or after the previous claim's end. Python then derives `claim_id = answer_id:start:end`, sorts the claims, and validates bounds, quote equality, no surrounding whitespace, unique IDs, no overlaps, labels, existing fact IDs, and that each fact ID belongs to a brand actually looked up in this answer. `reason` is trimmed to at most two sentences rather than failing the answer.
 
-**Errors.** Provider failure, timeout, malformed or invalid output, illegal tool, unknown requested brand, truncated output and turn exhaustion all produce `status=error` with a sanitized `error_type`/`error_message` and **zero** accepted predictions. An error is never converted to `unknown`. The API maps these to 502 (504 for timeout, 404 for an unknown primary brand, 422 for invalid requests).
+**Errors.** Provider failure, timeout, malformed or invalid output, illegal tool, unknown requested brand, truncated output and turn exhaustion all produce `status=error` with a sanitized `error_type`/`error_message` and **zero** accepted predictions. An error is never converted to `unknown`. The API maps these to 502 (504 for timeout, 404 for an unknown primary brand, 422 for invalid requests). A missing API key gives 502 `provider_not_configured`; a missing `DATABASE_URL` gives 503.
 
-**Persistence.** `runs` → `answer_results` → `claim_results`, linked by `run_id` with foreign keys. Constraints: unique `(run_id, answer_id)`, unique `(run_id, answer_id, start_char, end_char)`, label and status CHECKs, and an error row may not carry claims. Each answer's terminal row and its claims are written in one transaction as soon as that answer finishes, so an interrupted run keeps its partial evidence and is marked `failed`. Run rows hold split, agent/prompt (path + SHA-256)/dataset/evaluator/fact versions, provider, model, settings, git revision, CSV hashes, counts, scores (NULL for check runs) and development diagnostics as JSONB.
+**Persistence.** `runs` → `answer_results` → `claim_results`, linked by `run_id` with foreign keys. Constraints: unique `(run_id, answer_id)`, unique `(run_id, answer_id, start_char, end_char)`, label and status CHECKs, and a trigger that rejects claim rows for an error answer. Each answer's terminal row and its claims are written in one transaction as soon as that answer finishes, so an interrupted run keeps its partial evidence and is marked `failed`. Run rows hold split, agent/prompt (path + SHA-256)/dataset/evaluator/fact versions, provider, model, settings, git revision, CSV hashes, counts, scores (NULL for check runs) and development diagnostics as JSONB.
 
 **Scoring.** Matching is exact on `(answer_id, start_char, end_char)` after quote equality is validated; each gold span matches at most one prediction. Extraction P = M/P, R = M/G, F1 = 2M/(P+G); joint P = C/P, R = C/G, F1 = 2C/(P+G). Zero denominators give 0 when gold exists; an empty split gives null. Reports also list coverage C/G, missed gold IDs, unmatched prediction IDs, matched wrong-label IDs and answer error counts. Missing or duplicated answer outcomes are rejected. For check runs, G/M/C, matches, expected labels and all quality metrics are null.
 
@@ -103,7 +105,8 @@ This project was built with substantial help from **Claude Code** (Anthropic), a
 - quote/offset equality for every stored claim;
 - a secret scan of the repository, traces and reports;
 - confirmation that the agent, prompt, validation and scorer code is unchanged since the freeze tags;
-- the full test suite against a real PostgreSQL database.
+- the full test suite against a real PostgreSQL database;
+- an independent review by a separate agent that had not seen the build. It recomputed every reported number, checked the hashes, freezes and secrets, and ran the tests from a fresh clone. Its findings were fixed or disclosed in RESULTS.md.
 
 **What I verified myself:** _(fill in before submitting. For example: I read every module and can explain the agent loop, validation and scoring; I re-ran `pytest`; I re-derived the G=10 P=10 M=8 C=7 arithmetic; I checked a sample of predictions in `reports/*.md` against `brand_facts.csv`; I reviewed the A42 inconsistency.)_
 

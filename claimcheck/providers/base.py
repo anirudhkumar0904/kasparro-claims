@@ -24,6 +24,10 @@ class ProviderTimeout(ProviderError):
     error_type = "provider_timeout"
 
 
+class ProviderNotConfigured(ProviderError):
+    error_type = "provider_not_configured"
+
+
 @dataclass
 class ToolCall:
     id: str

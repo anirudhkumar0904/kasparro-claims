@@ -1,6 +1,8 @@
 # Results and analysis
 
-All runs used the same data (CSV hashes in every report), evaluator, provider (`anthropic`), model (`claude-sonnet-5-5`) and settings: 3-turn limit, 180 s request timeout, 16,000 max tokens, SDK retries off, provider-default sampling. Only `prompts/v1.md` versus `prompts/v2.md` differs, and the two prompts differ in a single rule (`git diff v1-frozen v2-frozen -- claimcheck/prompts`).
+> Drafted with Claude Code during the build session (see the AI-assistance disclosure in README.md). First-person statements ("I re-ran…") describe actions taken in that session; the candidate should review and confirm them before submitting.
+
+All runs used the same data (CSV hashes in every report), evaluator, provider (`anthropic`), model (`claude-sonnet-5-5`) and settings: 3-turn limit, 180 s request timeout, 16,000 max tokens, SDK retries off, provider-default sampling. Only `prompts/v1.md` versus `prompts/v2.md` differs, and the two prompts differ in a single rule: `diff claimcheck/prompts/v1.md claimcheck/prompts/v2.md` shows only the `fact_ids` bullet (one line replaced by four). `v1.md` is byte-identical at `v1-frozen`, `v2-frozen` and HEAD; `v2.md` first appears at `v2-frozen`.
 
 ## The four required live runs
 
@@ -19,7 +21,7 @@ Missed gold IDs: none. Unmatched prediction IDs: none. Matched wrong-label IDs: 
 
 I treated 1.0 as something to verify, not celebrate:
 
-- An independent re-count straight from the `claim_results` rows against `development_gold.csv`, bypassing `scoring.py`, gives P=M=C=G=376.
+- An independent re-count straight from the `claim_results` rows against `development_gold.csv`, bypassing `scoring.py`, gives P=M=C=G=376 (`python scripts/recount_from_db.py <run_id>…`, output in `evidence/recount_from_db.txt`). A separate reviewer agent, given only the repository, recomputed the same numbers with its own code.
 - Every stored quote equals `ai_answer[start:end]`.
 - The traces show genuine Anthropic tool calls (turn 1 `tool_use` → `get_brand_facts`, turn 2 `end_turn`), with token usage that matches the run totals.
 - Gold cannot reach the model: `AgentInput` forbids extra fields, gold is loaded only after all of a run's predictions are persisted, and `test_gold_never_enters_model_or_tool_payloads` checks the payloads.
@@ -46,7 +48,8 @@ With no span or label failures to fix, I investigated a concrete risk that the r
 
 - **Main metric (joint F1): no gain is possible from 1.0 and none is claimed.** v2 has 0 extraction or label regressions on development: 0 claims flipped either way, and 0 extra predictions.
 - **Evidence agreement (secondary diagnostic, computed identically for every run from the saved rows):** +13 points exact-set rate, +0.05 fact-ID F1, with fewer extra and fewer missing IDs. It improved for every expected label (contradicted 0.61→0.76, supported 0.78→0.88, unknown 0.68→0.82).
-- **Noise check:** sampling is not fixed, so I re-ran frozen v1 on development once more. It reproduced the 1.0 joint F1, and its evidence rate was 0.668 against 0.689 for the first v1 run. Run-to-run variation (about 2 points) is much smaller than the v1→v2 difference (about 13 points), so the improvement is unlikely to be noise. It is still one run per version, not a confidence interval.
+- **Noise check:** sampling is not fixed, so I re-ran frozen v1 on development once more. It reproduced the 1.0 joint F1, and its evidence rate was 0.668 against 0.689 for the first v1 run. Run-to-run variation (about 2 points) is much smaller than the v1→v2 difference (about 13 points), so the improvement is unlikely to be noise. It is still one run per version, not a confidence interval, and there is no repeat of v2.
+- **This gain is in-sample.** The v2 rule was written from v1's disagreements with the development gold `evidence_fact_ids` and then measured against that same gold. There is no held-out evidence measurement (the check split's gold is private), so the 13-point gain is an optimistic estimate of how well the rule generalises.
 - **Residual evidence disagreements in v2 (68 claims):** mostly gold conventions that are arguably debatable. For example, citing `bluetooth_version` alongside `wifi` for "Wi-Fi is absent, separate from Bluetooth", or the invoice-requirement row next to the warranty row. I did not tune further, because the brief asks for one change.
 
 ### Check split: what can and cannot be said
@@ -57,7 +60,13 @@ Both check runs completed 10/10 answers with 94 predictions each, on the identic
 
 - The final-check inputs are visible, so this is not a blind benchmark. No prompt or code was tuned on A41–A50. After both versions were frozen and their check predictions saved, I compared the two check outputs to each other, as described above, and changed nothing.
 - While designing v1, I read the brief's label rules and looked at a sample of development gold rows to understand the extraction unit and label conventions. The v2 change was derived from v1's development errors, which is the purpose of the development split.
-- `claimcheck/report.py` (reporting only) was extended after the `v2-frozen` tag with the evidence diagnostic and the comparison pairing fix; the agent, prompts, validation and scorer are unchanged since their freezes (`git diff v2-frozen -- claimcheck/agent.py claimcheck/prompts claimcheck/validation.py claimcheck/scoring.py` is empty). Reports were regenerated from the stored database rows with the same report code for every run.
+- **Timeline.** The v1 development run finished at 13:30:31 IST and `v2-frozen` was committed about 90 seconds later. The controlled tests and report code had been written *while* v1 was running. The evidence diagnosis was a scripted query over the completed v1 rows and gold, run straight after the run finished, followed by writing the v2 rule. No partial-run data was used.
+- **Code changes outside the agent.** `claimcheck/report.py` (reporting only) changed both between `v1-frozen` and `v2-frozen` (evidence diagnostic) and after `v2-frozen` (comparison pairing fix, check-split diff). After all live runs, following an independent review, these changed:
+  - the API/DB layer: a missing API key now maps to 502 instead of 500, provider construction is lazy, a missing `DATABASE_URL` maps to 503, and a database trigger forbids claim rows on error answers;
+  - three tests were added;
+  - `scripts/recount_from_db.py` was added.
+
+  The agent loop, prompts, validation, scorer, runner and data loading are unchanged since their freezes (`git diff v2-frozen -- claimcheck/agent.py claimcheck/prompts claimcheck/validation.py claimcheck/scoring.py claimcheck/runner.py claimcheck/data.py claimcheck/facts_tool.py` is empty). Each run's `source_revision` in its report records the exact commit it ran at. Reports were regenerated from the stored database rows with the same report code for every run.
 
 ## Cost and timing
 
@@ -73,13 +82,13 @@ Every one of the 140 live answer runs used exactly 2 model turns (one lookup tur
 
 ## Tests actually run
 
-`python -m pytest -v` → **71 passed, 0 skipped, 0 failed** against a real local PostgreSQL 16 test database (`evidence/pytest_output.txt`). The tests cover:
+`python -m pytest -v` → **74 passed, 0 skipped, 0 failed** against a real local PostgreSQL 16 test database (`evidence/pytest_output.txt`). The tests cover:
 
 - **CSV:** quoted commas and embedded newlines with byte-exact `ai_answer`; all 376 gold spans equal their slices; CSV hashes; literal boolean parsing (`"false"` → `False`, `"False"` rejected); typed values; blank unit/condition → `None`.
 - **Validation:** valid offsets; out-of-bounds and mismatched quotes; whitespace-padded spans; wrong `claim_id`; duplicate IDs; overlapping and unordered claims; invented fact IDs; fact IDs from a brand that was not looked up; repeated-quote resolution; reason trimming; malformed JSON, unsupported labels and extra fields.
 - **Scorer:** perfect output; missed claims; extra advice prediction; partial span; wrong labels; a provider-error answer, whose gold stays in G; valid empty predictions; the G=10 P=10 M=8 C=7 example (0.80/0.70, coverage 0.70, not 0.875); missing, duplicate and unscheduled outcomes rejected; duplicate spans rejected; null metrics for check and empty splits.
 - **Fake provider:** malformed output; unsupported label; quote not found; invented fact ID; illegal tool (not executed, no further turn); unknown requested brand; invalid tool arguments; unknown primary brand; timeout; provider error; turn exhaustion (exactly 3 calls); final answer without tool use; truncated output; valid empty output; multiple tool calls in one turn; gold never entering model/tool payloads.
-- **API + DB:** 200 `/classify`; 422 for `claims`/`gold_spans`/`expected_label` fields, missing fields, a bad version and an empty ID, with input values not echoed; 404 unknown brand; 502 malformed/provider/turn-limit; 504 timeout; 201 check run with ok, empty and error answers and null quality; joined GET in stable order; development run with an error answer scored and claims marked; GET 404/422; unique-constraint and CHECK violations with per-answer transaction rollback; an infrastructure failure mid-run marked `failed` with partial evidence kept.
+- **API + DB:** 200 `/classify`; 422 for `claims`/`gold_spans`/`expected_label` fields, missing fields, a bad version and an empty ID, with input values not echoed; 404 unknown brand; 502 malformed/provider/turn-limit; 504 timeout; 201 check run with ok, empty and error answers and null quality; joined GET in stable order; development run with an error answer scored and claims marked; GET 404/422; unique-constraint and CHECK violations with per-answer transaction rollback; an infrastructure failure mid-run marked `failed` with partial evidence kept; a database trigger rejecting claim rows on an error answer; a missing API key mapping to 502 (unknown brand still 404, no run row created); a missing `DATABASE_URL` mapping to 503.
 
 Tests written but **not** run: none. Fakes test the plumbing only. The four live runs above are the actual quality evidence.
 
@@ -93,6 +102,8 @@ Live API calls through uvicorn: `evidence/api_calls.json` (a live 200 `/classify
 - `POST /evaluation-runs` is synchronous: a 40-answer development run holds the HTTP request for about 7 minutes. That is acceptable locally, as the brief requires no durability or idempotency.
 - `/classify` results are not persisted, since the brief does not require it.
 - The 180 s timeout is per request, so the worst case per answer is 3 × 180 s.
+- Repeated identical sentences are resolved by document order (each quote takes the first free occurrence after the previous claim), not by inspecting surrounding context. No answer in this dataset repeats a sentence, so this was never exercised live.
+- `requirements.txt` pins the top-level packages only, not their transitive dependencies.
 - There is no Langfuse, concurrency or React (all optional).
 
 ## Unfinished work / next steps

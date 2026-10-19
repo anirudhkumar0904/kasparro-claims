@@ -12,10 +12,14 @@ from psycopg.types.json import Jsonb
 SCHEMA_PATH = Path(__file__).resolve().parent / "schema.sql"
 
 
+class DatabaseNotConfigured(RuntimeError):
+    pass
+
+
 class Database:
     def __init__(self, url: str):
         if not url:
-            raise RuntimeError("DATABASE_URL is not configured")
+            raise DatabaseNotConfigured("DATABASE_URL is not configured")
         self.url = url
 
     def connect(self) -> psycopg.Connection:

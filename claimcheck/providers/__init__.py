@@ -7,18 +7,33 @@ class ProviderFactory:
     """Callable answer_id -> Provider that also records provider name/model
     for run metadata (a live run reuses one client; tests script per answer)."""
 
-    def __init__(self, fn: Callable[[str], Provider], name: str, model: str):
+    def __init__(self, fn: Callable[[str], Provider], name: str, model: str,
+                 preflight: Callable[[], None] | None = None):
         self._fn = fn
         self.name = name
         self.model = model
+        self._preflight = preflight
 
     def __call__(self, answer_id: str) -> Provider:
         return self._fn(answer_id)
 
+    def preflight(self) -> None:
+        """Raise ProviderError early (e.g. missing API key) before any work starts."""
+        if self._preflight is not None:
+            self._preflight()
+
 
 def live_provider_factory(settings) -> ProviderFactory:
-    provider = make_live_provider(settings)
-    return ProviderFactory(lambda _aid: provider, provider.name, provider.model)
+    """Lazily builds one live client, so a missing key surfaces as a ProviderError
+    inside the request (mapped to 502) instead of failing dependency injection."""
+    cache: dict[str, Provider] = {}
+
+    def get(_aid: str = "") -> Provider:
+        if "p" not in cache:
+            cache["p"] = make_live_provider(settings)
+        return cache["p"]
+
+    return ProviderFactory(get, settings.provider, settings.model, preflight=lambda: get())
 
 
 def make_live_provider(settings):

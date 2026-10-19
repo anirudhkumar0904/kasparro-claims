@@ -28,3 +28,13 @@
 ### Regressed
 
 
+
+## Check split: v1 vs v2 saved outputs (no gold; not a quality score)
+
+- spans: v1 94, v2 94, shared 94, only v1 0, only v2 0
+- shared spans with a different label: 1
+- shared spans with different fact_ids only: 18
+
+- `A42:1433:1597` v1 **contradicted** / v2 **supported**: For a current India catalogue comparison before shipping, ClearTrail Plus is INR 1,200 less expensive than ClearTrail Mini, with tax included in both listed prices.
+  - v1 reason: Plus is INR 2,499 and Mini is INR 1,299, so Plus costs INR 1,200 more, not less.
+  - v2 reason: The 2026 prices are INR 2,499 for Plus and INR 1,299 for Mini, both tax included. That makes Plus INR 1,200 more expensive, not less, so the claim is wrong.

@@ -5,7 +5,7 @@ from typing import Any
 
 import anthropic
 
-from .base import ProviderError, ProviderResponse, ProviderTimeout, ToolCall
+from .base import ProviderError, ProviderNotConfigured, ProviderResponse, ProviderTimeout, ToolCall
 
 
 class AnthropicProvider:
@@ -13,7 +13,7 @@ class AnthropicProvider:
 
     def __init__(self, api_key: str, model: str, api_base: str, max_retries: int = 0):
         if not api_key:
-            raise ProviderError("ANTHROPIC_API_KEY is not configured")
+            raise ProviderNotConfigured("ANTHROPIC_API_KEY is not configured")
         self.model = model
         # max_retries=0: a retry would silently add model calls beyond what the
         # trace shows; a failure becomes an answer-level error instead.
