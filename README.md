@@ -97,4 +97,16 @@ The actual output of the run used for submission is in [`evidence/pytest_output.
 
 ## AI assistance disclosure
 
-PLACEHOLDER
+This project was built with substantial help from **Claude Code** (Anthropic), as the brief permits. Claude Code wrote most of the code, the prompts, the tests and this documentation, ran the four live runs on my API key, and drafted the analysis in RESULTS.md. The automated checks performed during the build were:
+
+- an independent re-count of the development scores from raw database rows, bypassing the scorer;
+- quote/offset equality for every stored claim;
+- a secret scan of the repository, traces and reports;
+- confirmation that the agent, prompt, validation and scorer code is unchanged since the freeze tags;
+- the full test suite against a real PostgreSQL database.
+
+**What I verified myself:** _(fill in before submitting. For example: I read every module and can explain the agent loop, validation and scoring; I re-ran `pytest`; I re-derived the G=10 P=10 M=8 C=7 arithmetic; I checked a sample of predictions in `reports/*.md` against `brand_facts.csv`; I reviewed the A42 inconsistency.)_
+
+**Time spent:** about 45 minutes of wall-clock time with Claude Code (13:13–13:58 IST, 19 October 2026), including about 26 minutes of live model runs. _(Add your own review time.)_
+
+Git history: `v1-frozen` and `v2-frozen` tags mark the frozen agent versions; later commits only add run artifacts, reports and documentation.

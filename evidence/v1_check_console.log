@@ -1,0 +1,12 @@
+[1/10] A41 ok claims=9 8253ms
+[2/10] A42 ok claims=10 10370ms
+[3/10] A43 ok claims=9 9078ms
+[4/10] A44 ok claims=10 10283ms
+[5/10] A45 ok claims=9 9457ms
+[6/10] A46 ok claims=11 10485ms
+[7/10] A47 ok claims=8 9743ms
+[8/10] A48 ok claims=10 9804ms
+[9/10] A49 ok claims=8 8897ms
+[10/10] A50 ok claims=10 12154ms
+908c0863-5374-48f1-9475-dff9903910f5 completed {'scheduled_answers': 10, 'ok_answers': 10, 'error_answers': 0, 'empty_ok_answers': 0, 'P': 94, 'G': None, 'M': None, 'C': None, 'processed_answers': 10, 'answer_error_types': {}, 'total_latency_ms': 98524, 'input_tokens': 110152, 'output_tokens': 16011} None
+report: /home/claude/kasparro-claims/reports/v1_check.json /home/claude/kasparro-claims/reports/v1_check.md

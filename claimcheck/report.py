@@ -256,7 +256,13 @@ def compare_runs(runs: list[dict[str, Any]]) -> str:
                  f"{_fmt(s.get('extraction_recall'))} | {_fmt(s.get('extraction_f1'))} | "
                  f"{_fmt(s.get('joint_precision'))} | {_fmt(s.get('joint_recall'))} | "
                  f"**{_fmt(s.get('joint_f1'))}** | {_fmt(cov)} |")
-    dev = {r["agent_version"]: r for r in runs if r["split"] == "development" and r["status"] == "completed"}
+    # The first completed development run per version (in the order given) is the primary pair;
+    # later development runs (e.g. a supplementary repeat) appear only in the evidence table.
+    dev: dict[str, dict] = {}
+    for r in runs:
+        if r["split"] == "development" and r["status"] == "completed":
+            dev.setdefault(r["agent_version"], r)
+    all_dev = [r for r in runs if r["split"] == "development" and r["status"] == "completed"]
     if "v1" in dev and "v2" in dev:
         def outcome_map(run):
             out = {}
@@ -269,11 +275,13 @@ def compare_runs(runs: list[dict[str, Any]]) -> str:
             return out, extras
         o1, x1 = outcome_map(dev["v1"])
         o2, x2 = outcome_map(dev["v2"])
-        e1, e2 = evidence_agreement(dev["v1"]), evidence_agreement(dev["v2"])
         L += ["", "## Evidence agreement on development (secondary diagnostic)", "",
               "| run | matched claims | exact-set rate | fact-ID precision | fact-ID recall | fact-ID F1 | fp | fn |",
               "|---|---|---|---|---|---|---|---|"]
-        for name, e in (("v1", e1), ("v2", e2)):
+        for r in all_dev:
+            e = evidence_agreement(r)
+            role = "primary" if dev.get(r["agent_version"]) is r else "supplementary repeat"
+            name = f"{r['agent_version']} `{r['run_id'][:8]}` ({role})"
             L.append(f"| {name} | {e['matched_claims']} | {_fmt(e['exact_set_rate'])} | {_fmt(e['fact_id_precision'])} | "
                      f"{_fmt(e['fact_id_recall'])} | {_fmt(e['fact_id_f1'])} | {e['fact_id_fp']} | {e['fact_id_fn']} |")
         fixed = [k for k in o1 if o1[k][0] != "correct" and o2[k][0] == "correct"]
