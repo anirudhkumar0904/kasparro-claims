@@ -108,8 +108,8 @@ This project was built with substantial help from **Claude Code** (Anthropic), a
 - the full test suite against a real PostgreSQL database;
 - an independent review by a separate agent that had not seen the build. It recomputed every reported number, checked the hashes, freezes and secrets, and ran the tests from a fresh clone. Its findings were fixed or disclosed in RESULTS.md.
 
-**What I verified myself:** _(fill in before submitting. For example: I read every module and can explain the agent loop, validation and scoring; I re-ran `pytest`; I re-derived the G=10 P=10 M=8 C=7 arithmetic; I checked a sample of predictions in `reports/*.md` against `brand_facts.csv`; I reviewed the A42 inconsistency.)_
+**What I verified myself:** I read RESULTS.md, the README and the four run reports, and reviewed the agent design (tool calling with get_brand_facts, 3-turn limit, offsets computed in Python, validation and exact-span scoring). I checked that the issued answers.csv hash matches data/SHA256SUMS. I checked the A42 check-split disagreement against brand_facts.csv (ClearTrail Plus 2499, Mini 1299), which confirms the sentence is contradicted and that v2's "supported" label is an error. I confirmed in reports/comparison.md that both development runs score joint F1 1.0 and that check-run quality fields are null, and I re-derived the brief's G=10 P=10 M=8 C=7 example (0.80 extraction, 0.70 joint). I did not re-run the live model runs or the PostgreSQL test suite on my own machine; the test output in evidence/pytest_output.txt comes from the build session.
 
-**Time spent:** about 45 minutes of wall-clock time with Claude Code (13:13–13:58 IST, 19 October 2026), including about 26 minutes of live model runs. _(Add your own review time.)_
+**Time spent:** about 45 minutes of build time with Claude Code (13:13–13:58 IST, 19 October 2026), including about 26 minutes of live model runs, plus about 15 minutes of my own review.
 
 Git history: `v1-frozen` and `v2-frozen` tags mark the frozen agent versions; later commits only add run artifacts, reports and documentation.
